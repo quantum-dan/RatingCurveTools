@@ -41,6 +41,8 @@ CURVE_COEFFS = ["X1", "X2", "X3", "X4", "X5", "X6", "X7", "X8", "X9", "X10",
                 "LnX", "SqrtX", "Rt3X"]
 CURVE_IDC = "ID"
 CURVE_FC = "Function"
+CURVE_MINQ = "MinQ"
+CURVE_MAXQ = "MaxQ"
 
 CURVE_FNS = [
     lambda x: x,
@@ -88,10 +90,12 @@ def prepare_ftab(path):
     fnx = header.index(CURVE_FC)
     hix = header.index(CURVE_COEFFS[0])
     hjx = header.index(CURVE_COEFFS[-1])
+    minq = header.index(CURVE_MINQ)
+    maxq = header.index(CURVE_MAXQ)
     if not header[hix:hjx+1] == CURVE_COEFFS:
         raise ValueError("Wrong set of curve coefficients")
     # Prepare for application: dictionary of
-    # {id: (function names, functions matrix)}
+    # {id: (function names, functions matrix, min qs, max qs)}
     # So that for a given ID the matrix can be multiplied by the inputs
     output = {}
     for row in raw[1:]:
@@ -99,8 +103,13 @@ def prepare_ftab(path):
         if ident in output:
             output[ident][0].append(row[fnx])
             output[ident][1].append(list(map(float, row[hix:hjx+1])))
+            output[ident][2].append(float(row[minq]))
+            output[ident][3].append(float(row[maxq]))
         else:
-            output[ident] = ([row[fnx]], [list(map(float, row[hix:hjx+1]))])
+            output[ident] = ([row[fnx]],
+                             [list(map(float, row[hix:hjx+1]))],
+                             [float(row[minq])],
+                             [float(row[maxq])])
     return output
 
 
@@ -119,11 +128,21 @@ def apply_ftab(ftab, flows, raw, id):
     # Next: coeff is a matrix with rows corresponding to output functions
     # and columns corresponding to input functions
     coeff = array(ftab[id][1])
-    # Product gives flow predictions
+    # Product gives flow predictions; columns correspond to flows
     prediction = coeff @ exflows
     # Now just re-arrange things and label it
     fnames = ftab[id][0]
-    vertical = transpose(prediction).tolist()
+    minq = ftab[id][2]
+    maxq = ftab[id][3]
+    vertical = transpose(prediction).tolist()  # rows correspond to flows
+    width = len(vertical[0])
+    # Apply minQ/maxQ
+    for ix in range(len(vertical)):
+        for jx in range(width):
+            if flows[ix] < minq[jx]:
+                vertical[ix][jx] = 0
+            if flows[ix] > maxq[jx]:
+                vertical[ix][jx] = "NA"
     named = [fnames] + vertical
     # Put raw back at the front to include all the labels etc
     return [(["ID"] if ix == 0 else [id]) + raw[ix] + named[ix]
@@ -143,65 +162,11 @@ def run(inputs, basepaths=True):
         write_csv(out, pathify(OUT_PATH) + op)
 
 
-base_name_13m = "Sc1013.minuswidth\\%s_Sc1013_n035_z4_afp_lfc13.csv"
-base_name_13p = "Sc1013.pluswidth\\%s_Sc1013_n035_z4_afp_lfc13.csv"
-curve_name_13m = "Curve_Sc1013m.csv"
-curve_name_13p = "Curve_Sc1013p.csv"
-cn40 = "Curve_Sc40_n035_z4_afp_lfc13.csv"
-cn11 = "Curve_Sc1011.csv"
-cn_iter = "Curve_Sc1014_iterations.csv"
-base_iter = "Sc1014_iter\\%s_Sc1014_n035_z4_afp_lfc13.csv"
-
-inputs_iter = [
-    ("F45B", "F45B_all_scenarios.csv", cn_iter,
-     base_iter % "F45B"),
-    ("F37B",
-     "F37B_all_scenarios.csv", cn_iter,
-     base_iter % "F37BHigh"),
-    ("LA14",
-     "LA14_all_scenarios.csv", cn_iter,
-     base_iter % "LA14")
-    ]
-
-inputs13m = [
-    ("F45B", "F45B_all_scenarios.csv", curve_name_13m,
-     base_name_13m % "F45B_w443"),
-    ("F37BHigh",
-     "F37B_all_scenarios.csv", curve_name_13m,
-     base_name_13m % "F37BHigh_w246"),
-    ("LA14",
-     "LA14_all_scenarios.csv", curve_name_13m,
-     base_name_13m % "LA14_w920")
-    # ("LA3",
-    #  "LA3_all_scenarios_iterations.csv", curve_name, "LA3_w1084" + base_name)
-    ]
-
-inputs13p = [
-    ("F45B", "F45B_all_scenarios.csv", curve_name_13p,
-     base_name_13p % "F45B_w607"),
-    ("F37BHigh",
-     "F37B_all_scenarios.csv", curve_name_13p,
-     base_name_13p % "F37BHigh_w410"),
-    ("LA14",
-     "LA14_all_scenarios.csv", curve_name_13p,
-     base_name_13p % "LA14_w1248")
-    ]
-
-inputs11 = [
-    ("F45B", "F45B_all_scenarios.csv", cn11,
-     "Sc1011\\F45B_w525_Sc1011_n035_z4_afp8_lfc13.csv"),
-    ("F37BHigh",
-     "F37B_all_scenarios.csv", cn11,
-     "Sc1011\\F37BHigh_w328_Sc1011_n035_z4_afp8_lfc13.csv")
-    ]
-
-inputs40 = [
-    ("F45B", "F45B_all_scenarios.csv", cn40,
-     "Sc40\\F45B_w39_Sc40_n035_z4_afp_lfc13.csv"),
-    ("F37BHigh",
-     "F37B_all_scenarios.csv", cn40,
-     "Sc40\\F37BHigh_w39_Sc40_n035_z4_afp_lfc13.csv"),
-    ("LA14",
-     "LA14_all_scenarios.csv", cn40,
-     "Sc40\\LA14_w1084_Sc40_n035_z4_afp_lfc13.csv")
-    ]
+cpath = "Curve_Sc1025.csv"
+outbase = "Sc1025\\"
+flowsuf = "_all_scenarios.csv"
+outsuf = "_n035_afp.csv"
+inputs_1025 = list(map(
+    lambda x: (x, x + flowsuf, cpath, outbase + x + outsuf),
+    ["F45B", "F37B", "LA14"]
+    ))
