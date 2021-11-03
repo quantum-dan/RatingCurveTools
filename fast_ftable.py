@@ -90,8 +90,9 @@ def prepare_ftab(path):
     fnx = header.index(CURVE_FC)
     hix = header.index(CURVE_COEFFS[0])
     hjx = header.index(CURVE_COEFFS[-1])
-    minq = header.index(CURVE_MINQ)
-    maxq = header.index(CURVE_MAXQ)
+    minmax = CURVE_MINQ in header
+    minq = header.index(CURVE_MINQ) if minmax else None
+    maxq = header.index(CURVE_MAXQ) if minmax else None
     if not header[hix:hjx+1] == CURVE_COEFFS:
         raise ValueError("Wrong set of curve coefficients")
     # Prepare for application: dictionary of
@@ -103,13 +104,13 @@ def prepare_ftab(path):
         if ident in output:
             output[ident][0].append(row[fnx])
             output[ident][1].append(list(map(float, row[hix:hjx+1])))
-            output[ident][2].append(float(row[minq]))
-            output[ident][3].append(float(row[maxq]))
+            output[ident][2].append(float(row[minq]) if minmax else None)
+            output[ident][3].append(float(row[maxq]) if minmax else None)
         else:
             output[ident] = ([row[fnx]],
                              [list(map(float, row[hix:hjx+1]))],
-                             [float(row[minq])],
-                             [float(row[maxq])])
+                             [float(row[minq]) if minmax else None],
+                             [float(row[maxq]) if minmax else None])
     return output
 
 
@@ -139,9 +140,9 @@ def apply_ftab(ftab, flows, raw, id):
     # Apply minQ/maxQ
     for ix in range(len(vertical)):
         for jx in range(width):
-            if flows[ix] < minq[jx]:
+            if minq[jx] is not None and flows[ix] < minq[jx]:
                 vertical[ix][jx] = 0
-            if flows[ix] > maxq[jx]:
+            if maxq[jx] is not None and flows[ix] > maxq[jx]:
                 vertical[ix][jx] = "NA"
     named = [fnames] + vertical
     # Put raw back at the front to include all the labels etc
@@ -170,3 +171,7 @@ inputs_1025 = list(map(
     lambda x: (x, x + flowsuf, cpath, outbase + x + outsuf),
     ["F45B", "F37B", "LA14"]
     ))
+inputs_1014rpt = [
+    ("F45B", "F45B_all_scenarios.csv", "Curve_Sc1014_iterations.csv",
+     "Sc1014_F45B\\F45B_untidy.csv")
+    ]
